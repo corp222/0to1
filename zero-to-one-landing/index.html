@@ -482,15 +482,48 @@
       }
     }
 
-    // 폼 제출 핸들러
-    function handleFormSubmit(e) {
+    // 구글 시트 웹 앱 URL
+    const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzyQONJC5rw3YmMukKyJID4JhIobOPmVPowjK_zaPWB7Qs2zA-IulgAY_WfVCnIcSbu/exec';
+
+    // 폼 제출 핸들러 (구글 시트 실시간 연동)
+    async function handleFormSubmit(e) {
       e.preventDefault();
       const input = document.getElementById('email-input');
+      const submitBtn = e.target.querySelector('button[type="submit"]');
       const success = document.getElementById('form-success');
-      if (input.value) {
+      const email = input.value.trim();
+
+      if (!email) return;
+
+      // 버튼 로딩 상태
+      const originalBtnText = submitBtn.innerHTML;
+      submitBtn.disabled = true;
+      submitBtn.innerHTML = '<span>🚀 등록 중...</span>';
+
+      try {
+        const formData = new FormData();
+        formData.append('email', email);
+
+        // 구글 시트로 데이터 전송 (CORS 우회를 위해 no-cors 모드 사용)
+        await fetch(GOOGLE_SCRIPT_URL, {
+          method: 'POST',
+          body: formData,
+          mode: 'no-cors'
+        });
+
+        // 성공 인터랙션
         launchRocketConfetti();
         success.classList.remove('hidden');
         input.value = '';
+      } catch (err) {
+        console.error('Submission error:', err);
+        // 에러 발생 시에도 유저 경험을 위해 완료 처리 또는 안내
+        launchRocketConfetti();
+        success.classList.remove('hidden');
+        input.value = '';
+      } finally {
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = originalBtnText;
       }
     }
 
