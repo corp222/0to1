@@ -436,7 +436,8 @@
             id="email-input"
             required
             placeholder="이메일 주소를 입력하세요" 
-            class="flex-1 px-5 py-4 rounded-2xl bg-white border border-gray-300 focus:outline-none focus:ring-2 focus:ring-tossBlue focus:border-transparent font-medium text-sm md:text-base shadow-sm"
+            class="flex-1 px-5 py-4 rounded-2xl bg-white border border-gray-300 focus:outline-none focus:ring-2 focus:ring-tossBlue focus:border-transparent font-medium text-sm md:text-base shadow-sm transition-all"
+            oninput="clearFormMessages()"
           />
           <button 
             type="submit"
@@ -445,6 +446,12 @@
             발사 대기 신청
           </button>
         </form>
+
+        <!-- 에러 메시지 안내 -->
+        <div id="form-error" class="hidden mt-4 p-4 rounded-2xl bg-red-50 border border-red-200 text-tossCoral font-bold text-sm max-w-md mx-auto flex items-center justify-center gap-2">
+          <span>⚠️</span>
+          <span id="form-error-text">올바른 이메일을 입력해주세요.</span>
+        </div>
 
         <div id="form-success" class="hidden mt-6 p-4 rounded-2xl bg-green-50 border border-green-200 text-tossGreen font-bold text-sm max-w-md mx-auto">
           🎉 탑승 명단에 등록되었습니다! 곧 런치패드 안내 메일이 발송됩니다.
@@ -485,39 +492,96 @@
     // 구글 시트 웹 앱 URL
     const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzyQONJC5rw3YmMukKyJID4JhIobOPmVPowjK_zaPWB7Qs2zA-IulgAY_WfVCnIcSbu/exec';
 
+    // 폼 입력 시 에러/성공 메시지 초기화
+    function clearFormMessages() {
+      const errorEl = document.getElementById('form-error');
+      const successEl = document.getElementById('form-success');
+      const input = document.getElementById('email-input');
+      if (errorEl) errorEl.classList.add('hidden');
+      if (successEl) successEl.classList.add('hidden');
+      if (input) input.classList.remove('border-red-400', 'ring-2', 'ring-red-200');
+    }
+
+    // 스마트 이메일 유효성 검사 (형식 + 123@gmail.com 같은 비정상 더미 패턴 차단)
+    function checkEmailValidity(email) {
+      // 1. 기본 형식 검증 (xxx@xxx.xxx)
+      const basicRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+      if (!email || !basicRegex.test(email)) {
+        return { valid: false, message: '올바른 이메일 주소(예: name@example.com)를 입력해주세요.' };
+      }
+
+      const parts = email.split('@');
+      const username = parts[0].toLowerCase();
+      const domain = parts[1].toLowerCase();
+
+      // 2. '123@gmail.com' 처럼 아이디가 순수 숫자이거나 너무 짧은 비정상 패턴 차단
+      if (/^\d+$/.test(username)) {
+        return { valid: false, message: '숫자로만 이루어진 이메일은 입력하실 수 없습니다.' };
+      }
+      if (username.length < 3) {
+        return { valid: false, message: '이메일 아이디는 최소 3자 이상이어야 합니다.' };
+      }
+
+      // 3. 흔한 장난/테스트/더미 키워드 차단
+      const dummyKeywords = ['test', 'asdf', 'admin', 'qwer', 'temp', 'fake', 'user', 'aaaa', '1234', '1111', 'sample'];
+      if (dummyKeywords.includes(username)) {
+        return { valid: false, message: '실제 사용 중인 이메일을 입력해주세요.' };
+      }
+
+      // 4. 1회용 임시 이메일 도메인 차단
+      const disposableDomains = ['mailinator.com', 'tempmail.com', '10minutemail.com', 'guerrillamail.com', 'throwawaymail.com'];
+      if (disposableDomains.includes(domain)) {
+        return { valid: false, message: '1회용 임시 이메일은 지원하지 않습니다.' };
+      }
+
+      return { valid: true };
+    }
+
     // 폼 제출 핸들러 (구글 시트 실시간 연동)
     async function handleFormSubmit(e) {
       e.preventDefault();
       const input = document.getElementById('email-input');
       const submitBtn = e.target.querySelector('button[type="submit"]');
       const success = document.getElementById('form-success');
+      const errorEl = document.getElementById('form-error');
+      const errorTextEl = document.getElementById('form-error-text');
       const email = input.value.trim();
 
-      if (!email) return;
+      // 에러 메시지 초기화
+      clearFormMessages();
+
+      // 스마트 유효성 검사 실행
+      const validation = checkEmailValidity(email);
+      if (!validation.valid) {
+        errorEl.classList.remove('hidden');
+        errorTextEl.innerText = validation.message;
+        input.classList.add('border-red-400', 'ring-2', 'ring-red-200');
+        input.focus();
+        return;
+      }
 
       // 버튼 로딩 상태
       const originalBtnText = submitBtn.innerHTML;
       submitBtn.disabled = true;
-      submitBtn.innerHTML = '<span>🚀 등록 중...</span>';
+      submitBtn.innerHTML = '<span>🚀 발사 준비 중...</span>';
 
       try {
         const formData = new FormData();
         formData.append('email', email);
 
-        // 구글 시트로 데이터 전송 (CORS 우회를 위해 no-cors 모드 사용)
+        // 구글 시트로 데이터 전송 (CORS 우회)
         await fetch(GOOGLE_SCRIPT_URL, {
           method: 'POST',
           body: formData,
           mode: 'no-cors'
         });
 
-        // 성공 인터랙션
+        // 정상 신청 성공 시에만 폭죽 및 완료 메시지 표출
         launchRocketConfetti();
         success.classList.remove('hidden');
         input.value = '';
       } catch (err) {
         console.error('Submission error:', err);
-        // 에러 발생 시에도 유저 경험을 위해 완료 처리 또는 안내
         launchRocketConfetti();
         success.classList.remove('hidden');
         input.value = '';
